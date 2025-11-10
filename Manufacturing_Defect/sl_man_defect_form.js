@@ -310,15 +310,13 @@ define(['N/record', 'N/redirect', 'N/log', 'N/search'],
             }
         };
 
-        // ... (buildHtmlForm, createInfoField, and createItemRadio functions remain unchanged) ...
-        // [Scroll Down] - No changes were made to the HTML-building helper functions
-        
+        // ... [FUNCTIONS BELOW THIS LINE ARE MODIFIED] ...
+
         /**
          * Builds the HTML form using Tailwind CSS for styling.
          * @param {Object} poInfo - Header info from the PO.
          * @param {Array} poItems - Item lines from the PO.
          * @param {Array} issueOptions - Array of {value, text} for the fault issue dropdown.
-         * @param {string} postUrl - The URL to post the form to.
          * @returns {string} The complete HTML for the form page.
          */
         const buildHtmlForm = (poInfo, poItems, issueOptions) => { // Removed postUrl
@@ -373,9 +371,10 @@ define(['N/record', 'N/redirect', 'N/log', 'N/search'],
                                          alt="Company Logo" 
                                          class="h-12 object-contain"> </div>
                             </div>
-                            <div class="p-6 border-b border-gray-200">
-                                <h2 class="text-xl font-semibold text-gray-700 mb-4"></h2>
-                                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">    
+                            
+                            <div class="p-6 md:p-8">
+                                <h2 class="text-xl font-semibold text-gray-700 mb-4">Purchase Order Details</h2>
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4"> 	
                                     ${createInfoField('Supplier', poInfo.supplier)}
                                     ${createInfoField('Plot', poInfo.plot)}
                                     ${createInfoField('Location', poInfo.location)}
@@ -390,29 +389,29 @@ define(['N/record', 'N/redirect', 'N/log', 'N/search'],
                             <input type="hidden" name="custpage_location_id" value="${poInfo.locationId}">
 
                             
-                            <div class="p-6 border-b border-gray-200">
+                            <div class="p-6 md:p-8 bg-gray-50 border-t border-gray-200">
                                 
-                                <div class="max-w-md">
-                                    <label for="custpage_fault_issue" class="block text-sm font-medium text-gray-700 mb-1">
-                                        Fault Issue <span class="text-red-500">*</span>
+                                
+                                
+                                <div class="max-w-md mb-8"> 
+                                    <label for="custpage_fault_issue" 
+                                           class="block text-base font-semibold text-gray-700 mb-2"> 
+                                        1. Fault Issue <span class="text-red-500">*</span>
                                     </label>
                                     <select id="custpage_fault_issue" name="custpage_fault_issue" required
-                                        class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md shadow-sm">
+                                            class="mt-1 block w-full pl-3 pr-10 py-2.5 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md shadow-sm">
                                         <option value="">Please select a fault issue...</option>
                                         ${issueOptions.map(opt => `<option value="${opt.value}">${opt.text}</option>`).join('')}
                                     </select>
                                 </div>
-                            </div>
 
-                            <div class="p-6">
-                                <h2 class="text-xl font-semibold text-gray-700 mb-1">Select Defective Item</h2>
-                                <p class="text-sm text-gray-500 mb-4"></p>
+                                <h3 class="text-base font-semibold text-gray-700 mb-2">2. Select Defective Item <span class="text-red-500">*</span></h3>
+                                <p class="text-sm text-gray-500 mb-4">Choose the item from the list below that has the fault.</p>
                                 <div class="space-y-3">
                                     ${poItems.map(item => createItemRadio(item)).join('')}
                                 </div>
                                 <div id="item-error" class="text-red-600 text-sm mt-2 hidden">Please select one item.</div>
                             </div>
-
                             <div class="bg-gray-50 p-6 flex justify-end space-x-3">
                                 <button type="button" onclick="window.history.back()"
                                         class="bg-white py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500">
@@ -491,11 +490,14 @@ define(['N/record', 'N/redirect', 'N/log', 'N/search'],
             const itemDataString = JSON.stringify(itemData)
                 .replace(/"/g, '&quot;'); // Escape quotes
 
+            // === MODIFICATION START ===
+            // Added 'bg-white', 'shadow-sm', 'border-gray-300'
+            // and updated hover to 'hover:border-blue-500 hover:bg-blue-50'
             return `
             <div class="relative">
                 <input type="radio" name="custpage_selected_item" id="item_${item.itemId}_${item.line}" value="${itemDataString}" class="absolute h-4 w-4 top-5 left-4 opacity-0" required>
                 <label for="item_${item.itemId}_${item.line}" 
-                       class="block border border-gray-200 rounded-lg p-4 cursor-pointer transition-all hover:bg-gray-50">
+                       class="block bg-white border border-gray-300 rounded-lg p-4 cursor-pointer transition-all shadow-sm hover:border-blue-500 hover:bg-blue-50">
                     <div class="flex items-center">
                         <div class="flex-shrink-0">
                             <span class="inline-flex items-center justify-center h-6 w-6 rounded-full border border-gray-300 bg-white transition-all">
@@ -527,6 +529,7 @@ define(['N/record', 'N/redirect', 'N/log', 'N/search'],
                  }
             </style>
         `;
+            // === MODIFICATION END ===
         };
 
         return { onRequest };
