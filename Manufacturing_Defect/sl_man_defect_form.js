@@ -330,7 +330,7 @@ define(['N/record', 'N/redirect', 'N/log', 'N/search'],
             <head>
                 <meta charset="UTF-8">
                 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                <title>Defect</title>
+                <title>Manufacturing Defect</title>
                 <script src="https://cdn.tailwindcss.com"></script>
                 <style>
                     /* Simple loading spinner */
@@ -402,7 +402,7 @@ define(['N/record', 'N/redirect', 'N/log', 'N/search'],
                                         1. Fault Issue <span class="text-red-500">*</span>
                                     </label>
                                     <select id="custpage_fault_issue" name="custpage_fault_issue" required
-                                            class="mt-1 block w-full pl-3 pr-10 py-2.5 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md shadow-sm">
+                                            class="mt-1 block w-full pl-3 pr-10 py-2.5 text-base border border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-lg shadow-sm">
                                         <option value="">Please select a fault issue...</option>
                                         ${issueOptions.map(opt => `<option value="${opt.value}">${opt.text}</option>`).join('')}
                                     </select>
