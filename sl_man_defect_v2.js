@@ -173,8 +173,8 @@ define(['N/record', 'N/redirect', 'N/log', 'N/search'],
 
 
                 // 5. Build and send the HTML response
-                   const html = buildHtmlForm(poInfo, poItems, issueOptions); // Removed context.request.url
-                   context.response.write(html);
+                const html = buildHtmlForm(poInfo, poItems, issueOptions); // Removed context.request.url
+                context.response.write(html);
 
             } catch (e) {
                 log.error('handleGet Error', e.message);
@@ -186,7 +186,7 @@ define(['N/record', 'N/redirect', 'N/log', 'N/search'],
          * Handles the POST request. Receives form data, creates the new record, and redirects.
          * @param {Object} context - The Suitelet context.
          */
-const handlePost = (context) => {
+        const handlePost = (context) => {
             // *** NEW LOG ***
             log.debug({
                 title: 'handlePost: Save Button Pressed',
@@ -280,7 +280,7 @@ const handlePost = (context) => {
                 newDefectRec.setValue({ fieldId: 'custrecord_man_defect_plot', value: plotId });
                 newDefectRec.setValue({ fieldId: 'custrecord_man_defect_department', value: departmentId });
                 newDefectRec.setValue({ fieldId: 'custrecord_man_defect_location', value: locationId });
-                newDefectRec.setValue({ fieldId: 'custrecord_man_defect_issue', value: faultIssueId }); 
+                newDefectRec.setValue({ fieldId: 'custrecord_man_defect_issue', value: faultIssueId });
 
                 // *** NEW: Set item line fields ***
                 newDefectRec.setValue({ fieldId: 'custrecord_man_defect_item', value: selectedItemId });
@@ -288,7 +288,7 @@ const handlePost = (context) => {
                 newDefectRec.setValue({ fieldId: 'custrecord_man_defect_length', value: selectedItemLength });
                 newDefectRec.setValue({ fieldId: 'custrecord_man_defect_quantity', value: selectedItemQty });
                 newDefectRec.setValue({ fieldId: 'custrecord_man_defect_cost', value: selectedItemAmount });
-                
+
                 // 5. Save the new record
                 // *** NEW LOG ***
                 log.debug('POST: Attempting to save new defect record...');
@@ -362,14 +362,20 @@ const handlePost = (context) => {
                 <div class="container mx-auto p-4 md:p-8 max-w-4xl">
                     <form id="defect-form" method="POST" action="">
                         <div class="bg-white shadow-xl rounded-lg overflow-hidden">
-                            <div class="text-white p-6" style="background-color: #435969;">
-                                <h1 class="text-3xl font-bold">Manufacturing Defect</h1>
-                                <p class="text-gray-300 mt-1">${poInfo.tranId}</p>
-                            </div>
                             
+                            <div class="flex justify-between items-center text-white p-6" style="background-color: #435969;">
+                                <div>
+                                    <h1 class="text-3xl font-bold">Manufacturing Defect</h1>
+                                    <p class="text-gray-300 mt-1">${poInfo.tranId}</p>
+                                </div>
+                                <div>
+                                    <img src="https://6548935.app.netsuite.com/core/media/media.nl?id=12904734&c=6548935&h=lTRR7c30QxWFNVKbRyFb33OSd6KKQTdFVchouUxSK4Am28ls" 
+                                         alt="Company Logo" 
+                                         class="h-12 object-contain"> </div>
+                            </div>
                             <div class="p-6 border-b border-gray-200">
                                 <h2 class="text-xl font-semibold text-gray-700 mb-4"></h2>
-                                <div class="grid grid-cols-1 md:grid-cols-2 gap-4"> 	
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">    
                                     ${createInfoField('Supplier', poInfo.supplier)}
                                     ${createInfoField('Plot', poInfo.plot)}
                                     ${createInfoField('Location', poInfo.location)}
@@ -483,7 +489,7 @@ const handlePost = (context) => {
 
             // Stringify and escape for use in the HTML value attribute
             const itemDataString = JSON.stringify(itemData)
-                                       .replace(/"/g, '&quot;'); // Escape quotes
+                .replace(/"/g, '&quot;'); // Escape quotes
 
             return `
             <div class="relative">
@@ -499,9 +505,9 @@ const handlePost = (context) => {
                         <div class="ml-4">
                             <p class="text-md font-semibold text-blue-800">${item.itemName}</p>
                             <p class="text-sm text-gray-600">${item.description || 'No description'}</p>
-                            <p class="text-sm text-gray-500 mt-1">Quantity on PO: ${item.quantity}</p>
+                            <p class="text-sm text-gray-500 mt-1">Quantity: ${item.quantity}</p>
                             <p class="text-xs text-gray-500 mt-1">
-                                W: ${item.width || 'N/A'} | L: ${item.length || 'N/A'} | Cost: ${item.amount}
+                                W: ${item.width || 'N/A'} | L: ${item.length || 'N/A'} | Cost: £${item.amount}
                             </p>
                         </div>
                     </div>
