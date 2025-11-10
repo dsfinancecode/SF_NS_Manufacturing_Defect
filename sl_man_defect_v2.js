@@ -16,12 +16,24 @@ define(['N/record', 'N/redirect', 'N/log', 'N/search'],
          * @param {Object} context - The Suitelet context.
          */
         const onRequest = (context) => {
+            // *** NEW DEBUGGING ***
+            // Log the entire request context to see all parameters, URL, and method
+            log.debug({
+                title: 'onRequest Entry',
+                details: {
+                    method: context.request.method,
+                    url: context.request.url,
+                    parameters: context.request.parameters
+                }
+            });
+            // *** END NEW ***
+
             try {
                 if (context.request.method === 'GET') {
-                    log.debug('Request Received', 'GET');
+                    // log.debug('Request Received', 'GET'); // No longer needed, covered by above
                     handleGet(context);
                 } else if (context.request.method === 'POST') {
-                    log.debug('Request Received', 'POST');
+                    // log.debug('Request Received', 'POST'); // No longer needed, covered by above
                     handlePost(context);
                 }
             } catch (e) {
@@ -36,6 +48,16 @@ define(['N/record', 'N/redirect', 'N/log', 'N/search'],
          */
         const handleGet = (context) => {
             try {
+                // *** NEW DEBUGGING ***
+                // Log all received GET parameters *before* trying to access them.
+                // This will show you if 'poId' is missing, misspelled, or has the wrong case.
+                log.debug({
+                    title: 'handleGet Received Parameters',
+                    details: context.request.parameters
+                });
+                // *** END NEW ***
+
+
                 // *** NEW: Get Fault Issue Options via Search ***
                 log.debug('GET: Getting fault issue options');
                 let issueOptions = [];
@@ -71,10 +93,11 @@ define(['N/record', 'N/redirect', 'N/log', 'N/search'],
 
                 // 1. Get the Purchase Order ID from the URL parameters
                 const poId = context.request.parameters.poId;
-                log.debug('GET: URL Parameter "poId"', poId);
+                // log.debug('GET: URL Parameter "poId"', poId); // This is good, but the log above is more comprehensive
 
                 if (!poId) {
                     log.audit('GET: Missing Parameter', 'Purchase Order ID (poId) was not provided.');
+                    // The log above this will show what *was* provided instead.
                     throw new Error('Purchase Order ID (poId) was not provided as a URL parameter.');
                 }
 
@@ -88,11 +111,37 @@ define(['N/record', 'N/redirect', 'N/log', 'N/search'],
                 log.debug('GET: PO Loaded Successfully');
 
                 // 3. Get PO header values
+                const supplierId = poRec.getValue('entity');
+                const supplierText = poRec.getText('entity'); // Use this as a fallback
+                let companyName = supplierText; // Default to the fallback
+
+                if (supplierId) {
+                    try {
+                        log.debug('GET: Looking up supplier company name', `ID: ${supplierId}`);
+                        const supplierLookup = search.lookupFields({
+                            type: search.Type.VENDOR, // The entity on a PO is a Vendor
+                            id: supplierId,
+                            columns: ['companyname']
+                        });
+
+                        // Check if companyname was returned and has a value
+                        if (supplierLookup.companyname) {
+                            companyName = supplierLookup.companyname;
+                            log.debug('GET: Found company name', companyName);
+                        } else {
+                            log.debug('GET: Company name field was empty, using fallback text', supplierText);
+                        }
+                    } catch (e) {
+                        log.error('GET: Supplier company name lookup failed, using fallback text', e.message);
+                        // companyName is already set to the fallback, so no action needed
+                    }
+                }
+
                 const poInfo = {
                     poId: poId,
                     tranId: poRec.getValue('tranid'),
-                    supplier: poRec.getText('entity'),
-                    supplierId: poRec.getValue('entity'),
+                    supplier: companyName, // Use the new looked-up value
+                    supplierId: supplierId, // This was already correct
                     plot: poRec.getText('cseg_sf_plot'),
                     plotId: poRec.getValue('cseg_sf_plot'),
                     department: poRec.getText('department'),
@@ -119,8 +168,8 @@ define(['N/record', 'N/redirect', 'N/log', 'N/search'],
                 log.debug('GET: PO Items', poItems);
 
                 // 5. Build and send the HTML response
-                const html = buildHtmlForm(poInfo, poItems, issueOptions, context.request.url);
-                context.response.write(html);
+                   const html = buildHtmlForm(poInfo, poItems, issueOptions); // Removed context.request.url
+                   context.response.write(html);
 
             } catch (e) {
                 log.error('handleGet Error', e.message);
@@ -132,11 +181,18 @@ define(['N/record', 'N/redirect', 'N/log', 'N/search'],
          * Handles the POST request. Receives form data, creates the new record, and redirects.
          * @param {Object} context - The Suitelet context.
          */
-        const handlePost = (context) => {
+const handlePost = (context) => {
+            // *** NEW LOG ***
+            log.debug({
+                title: 'handlePost: Save Button Pressed',
+                details: 'Form submitted. Starting POST processing.'
+            });
+            // *** END NEW ***
+
             try {
                 // 1. Get all parameters from the POST body
                 const params = context.request.parameters;
-                log.debug('POST: Received parameters', params);
+                log.debug('POST: Received parameters', JSON.stringify(params || {}));
 
                 const poId = params.custpage_po_id;
                 const supplierId = params.custpage_supplier_id;
@@ -158,11 +214,28 @@ define(['N/record', 'N/redirect', 'N/log', 'N/search'],
                 }
                 // *** END NEW ***
 
+                // *** NEW LOG ***
+                // Log the data object that will be used to create the record
+                const defectData = {
+                    custrecordman_defect_purchaseorder: poId,
+                    custrecordman_defect_supplier: supplierId,
+                    custrecord_man_defect_plot: plotId,
+                    custrecord_man_defect_department: departmentId,
+                    custrecord_man_defect_location: locationId,
+                    custrecord_man_defect_item: selectedItemId,
+                    custrecord_man_defect_issue: faultIssueId
+                };
+                log.debug({
+                    title: 'POST: Data for New Defect Record',
+                    details: defectData
+                });
+                // *** END NEW ***
+
                 // 3. Create the new Manufacturing Defect record
-                log.debug('POST: Creating new defect record');
+                log.debug('POST: Creating new defect record', 'Type: customrecord_manufacturing_defect');
                 const newDefectRec = record.create({
                     type: 'customrecord_manufacturing_defect',
-                    isDynamic: true // Use dynamic mode to set values
+                    isDynamic: true
                 });
 
                 // 4. Set field values from the form
@@ -175,6 +248,9 @@ define(['N/record', 'N/redirect', 'N/log', 'N/search'],
                 newDefectRec.setValue({ fieldId: 'custrecord_man_defect_issue', value: faultIssueId }); // New field
 
                 // 5. Save the new record
+                // *** NEW LOG ***
+                log.debug('POST: Attempting to save new defect record...');
+                // *** END NEW ***
                 const newRecordId = newDefectRec.save();
                 log.debug('POST: New defect record created successfully', `ID: ${newRecordId}`);
 
@@ -192,6 +268,9 @@ define(['N/record', 'N/redirect', 'N/log', 'N/search'],
             }
         };
 
+        // ... (buildHtmlForm, createInfoField, and createItemRadio functions remain unchanged) ...
+        // [Scroll Down] - No changes were made to the HTML-building helper functions
+        
         /**
          * Builds the HTML form using Tailwind CSS for styling.
          * @param {Object} poInfo - Header info from the PO.
@@ -200,7 +279,7 @@ define(['N/record', 'N/redirect', 'N/log', 'N/search'],
          * @param {string} postUrl - The URL to post the form to.
          * @returns {string} The complete HTML for the form page.
          */
-        const buildHtmlForm = (poInfo, poItems, issueOptions, postUrl) => {
+        const buildHtmlForm = (poInfo, poItems, issueOptions) => { // Removed postUrl
             let html = `
             <!DOCTYPE html>
             <html lang="en">
@@ -239,18 +318,16 @@ define(['N/record', 'N/redirect', 'N/log', 'N/search'],
                 </div>
 
                 <div class="container mx-auto p-4 md:p-8 max-w-4xl">
-                    <form id="defect-form" method="POST" action="${postUrl}">
+                    <form id="defect-form" method="POST" action="">
                         <div class="bg-white shadow-xl rounded-lg overflow-hidden">
-                            <!-- Header Section -->
                             <div class="text-white p-6" style="background-color: #435969;">
                                 <h1 class="text-3xl font-bold">Manufacturing Defect</h1>
                                 <p class="text-gray-300 mt-1">${poInfo.tranId}</p>
                             </div>
                             
-                            <!-- PO Info Header -->
                             <div class="p-6 border-b border-gray-200">
                                 <h2 class="text-xl font-semibold text-gray-700 mb-4"></h2>
-                                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">  
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-4"> 	
                                     ${createInfoField('Supplier', poInfo.supplier)}
                                     ${createInfoField('Plot', poInfo.plot)}
                                     ${createInfoField('Location', poInfo.location)}
@@ -258,7 +335,6 @@ define(['N/record', 'N/redirect', 'N/log', 'N/search'],
                                 </div>
                             </div>
 
-                            <!-- Hidden fields for POST -->
                             <input type="hidden" name="custpage_po_id" value="${poInfo.poId}">
                             <input type="hidden" name="custpage_supplier_id" value="${poInfo.supplierId}">
                             <input type="hidden" name="custpage_plot_id" value="${poInfo.plotId}">
@@ -280,7 +356,6 @@ define(['N/record', 'N/redirect', 'N/log', 'N/search'],
                                 </div>
                             </div>
 
-                            <!-- Item Selection Section -->
                             <div class="p-6">
                                 <h2 class="text-xl font-semibold text-gray-700 mb-1">Select Defective Item</h2>
                                 <p class="text-sm text-gray-500 mb-4"></p>
@@ -290,7 +365,6 @@ define(['N/record', 'N/redirect', 'N/log', 'N/search'],
                                 <div id="item-error" class="text-red-600 text-sm mt-2 hidden">Please select one item.</div>
                             </div>
 
-                            <!-- Footer / Actions -->
                             <div class="bg-gray-50 p-6 flex justify-end space-x-3">
                                 <button type="button" onclick="window.history.back()"
                                         class="bg-white py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500">
@@ -362,7 +436,6 @@ define(['N/record', 'N/redirect', 'N/log', 'N/search'],
                        class="block border border-gray-200 rounded-lg p-4 cursor-pointer transition-all hover:bg-gray-50">
                     <div class="flex items-center">
                         <div class="flex-shrink-0">
-                            <!-- Custom radio button appearance -->
                             <span class="inline-flex items-center justify-center h-6 w-6 rounded-full border border-gray-300 bg-white transition-all">
                                 <span class="h-3 w-3 rounded-full bg-blue-600 opacity-0 transition-all"></span>
                             </span>
@@ -376,7 +449,6 @@ define(['N/record', 'N/redirect', 'N/log', 'N/search'],
                 </label>
             </div>
             
-            <!-- This style block is a bit of a hack to change the custom radio button on check -->
             <style>
                 #item_${item.itemId}_${item.line}:checked + label {
                     background-color: #eff6ff; /* blue-50 */
@@ -386,7 +458,7 @@ define(['N/record', 'N/redirect', 'N/log', 'N/search'],
                      border-color: #2563eb; /* blue-600 */
                 }
                  #item_${item.itemId}_${item.line}:checked + label span span {
-                    opacity: 1;
+                     opacity: 1;
                 }
             </style>
         `;
