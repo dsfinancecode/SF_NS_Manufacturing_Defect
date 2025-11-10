@@ -1,278 +1,395 @@
 /**
  * @NApiVersion 2.1
  * @NScriptType Suitelet
- * @description This Suitelet provides a custom HTML/Tailwind UI to create a Manufacturing Defect record.
- * It pre-populates data from a source Purchase Order and allows the user
- * to select one item from the PO to link to the new defect record.
+ * @description This Suitelet presents a custom HTML form (styled with Tailwind) to create
+ * a new Manufacturing Defect record. It pre-populates PO info as read-only headers
+ * and lists the PO items for the user to select one. It also includes a dropdown
+ * for "Fault Issue" loaded from a custom list.
  *
  * It expects a 'poId' parameter in the URL for the GET request.
  */
-define(['N/record', 'N/redirect', 'N/log'],
-    (record, redirect, log) => {
+define(['N/record', 'N/redirect', 'N/log', 'N/search'],
+    (record, redirect, log, search) => {
 
         /**
-         * Main Suitelet function.
-         * @param {Object} context - The context of the Suitelet request
+         * Main function that handles both GET and POST requests.
+         * @param {Object} context - The Suitelet context.
          */
         const onRequest = (context) => {
-            log.debug('Suitelet Execution Started', `Method: ${context.request.method}`);
-
-            if (context.request.method === 'GET') {
-                handleGet(context);
-            } else if (context.request.method === 'POST') {
-                handlePost(context);
-            } else {
-                log.audit('Unsupported Method', `Received a ${context.request.method} request.`);
-                context.response.write('This Suitelet only supports GET and POST requests.');
+            try {
+                if (context.request.method === 'GET') {
+                    log.debug('Request Received', 'GET');
+                    handleGet(context);
+                } else if (context.request.method === 'POST') {
+                    log.debug('Request Received', 'POST');
+                    handlePost(context);
+                }
+            } catch (e) {
+                log.error('onRequest Error', e.message);
+                context.response.write(`<html><body><h1>Error</h1><p>${e.message}</p></body></html>`);
             }
         };
 
         /**
-         * Handles the GET request to build and display the HTML form.
-         * @param {Object} context - The context of the Suitelet request
+         * Handles the GET request. Fetches PO data and builds the HTML form.
+         * @param {Object} context - The Suitelet context.
          */
         const handleGet = (context) => {
             try {
+                // *** NEW: Get Fault Issue Options via Search ***
+                log.debug('GET: Getting fault issue options');
+                let issueOptions = [];
+                try {
+                    const customListScriptId = 'customlist2123';
+                    log.debug('GET: Searching for custom list values', `List Script ID: ${customListScriptId}`);
+
+                    const listSearch = search.create({
+                        type: customListScriptId,
+                        filters: [
+                            ['isinactive', 'is', 'F'] // only active values
+                        ],
+                        columns: [
+                            'name' // The text of the option
+                        ]
+                    });
+
+                    listSearch.run().each(result => {
+                        issueOptions.push({
+                            value: result.id, // The internal ID of the list value
+                            text: result.getValue('name') // The name/text of the list value
+                        });
+                        return true; // continue iteration
+                    });
+
+                    log.debug('GET: Loaded issue options via search', issueOptions.length);
+
+                } catch (e) {
+                    log.error('GET: Failed to get issue options via search', e.message);
+                    // Don't throw, we can continue without it, but log the error
+                }
+                // *** END NEW ***
+
                 // 1. Get the Purchase Order ID from the URL parameters
                 const poId = context.request.parameters.poId;
                 log.debug('GET: URL Parameter "poId"', poId);
 
                 if (!poId) {
-                    log.warn('GET: Missing Parameter', 'Purchase Order ID (poId) was not provided.');
+                    log.audit('GET: Missing Parameter', 'Purchase Order ID (poId) was not provided.');
                     throw new Error('Purchase Order ID (poId) was not provided as a URL parameter.');
                 }
 
                 // 2. Load the Purchase Order record
-                log.debug('GET: Loading Purchase Order', `ID: ${poId}`);
+                log.debug('GET: Loading PO', `ID: ${poId}`);
                 const poRec = record.load({
                     type: record.Type.PURCHASE_ORDER,
                     id: poId,
                     isDynamic: false
                 });
-                log.debug('GET: Purchase Order Loaded Successfully');
+                log.debug('GET: PO Loaded Successfully');
 
-                // 3. Get values for display and for hidden fields
-                const supplierId = poRec.getValue('entity');
-                const supplierText = poRec.getText('entity');
-                const plotId = poRec.getValue('cseg_sf_plot');
-                const plotText = poRec.getText('cseg_sf_plot') || 'N/A';
-                const departmentId = poRec.getValue('department');
-                const departmentText = poRec.getText('department') || 'N/A';
-                const locationId = poRec.getValue('location');
-                const locationText = poRec.getText('location') || 'N/A';
-                const poName = poRec.getValue('tranid');
+                // 3. Get PO header values
+                const poInfo = {
+                    poId: poId,
+                    tranId: poRec.getValue('tranid'),
+                    supplier: poRec.getText('entity'),
+                    supplierId: poRec.getValue('entity'),
+                    plot: poRec.getText('cseg_sf_plot'),
+                    plotId: poRec.getValue('cseg_sf_plot'),
+                    department: poRec.getText('department'),
+                    departmentId: poRec.getValue('department'),
+                    location: poRec.getText('location'),
+                    locationId: poRec.getValue('location')
+                };
+                log.debug('GET: PO Header Info', poInfo);
 
-                // 4. Get PO Items
-                const items = [];
+                // 4. Get PO item values
+                const poItems = [];
                 const lineCount = poRec.getLineCount({ sublistId: 'item' });
-                log.debug('GET: Item line count', lineCount);
+                log.debug('GET: Item Sublist Line Count', lineCount);
+
                 for (let i = 0; i < lineCount; i++) {
-                    const itemId = poRec.getSublistValue({ sublistId: 'item', fieldId: 'item', line: i });
-                    const itemName = poRec.getSublistText({ sublistId: 'item', fieldId: 'item', line: i });
-                    const itemDesc = poRec.getSublistValue({ sublistId: 'item', fieldId: 'description', line: i });
-                    const itemQty = poRec.getSublistValue({ sublistId: 'item', fieldId: 'quantity', line: i });
-
-                    if (itemId && itemName) {
-                        const optionText = `${itemName} (Qty: ${itemQty}) ${itemDesc ? '- ' + itemDesc : ''}`;
-                        items.push({
-                            id: itemId,
-                            text: optionText
-                        });
-                    }
+                    poItems.push({
+                        line: i,
+                        itemId: poRec.getSublistValue({ sublistId: 'item', fieldId: 'item', line: i }),
+                        itemName: poRec.getSublistText({ sublistId: 'item', fieldId: 'item', line: i }),
+                        quantity: poRec.getSublistValue({ sublistId: 'item', fieldId: 'quantity', line: i }),
+                        description: poRec.getSublistValue({ sublistId: 'item', fieldId: 'description', line: i })
+                    });
                 }
-                log.debug('GET: Found items', items.length);
+                log.debug('GET: PO Items', poItems);
 
-                if (items.length === 0) {
-                    throw new Error('This Purchase Order has no items to select.');
-                }
-
-                // 5. Build the HTML page
-                const html = buildHtmlForm({
-                    poId,
-                    poName,
-                    supplierId,
-                    supplierText,
-                    plotId,
-                    plotText,
-                    departmentId,
-                    departmentText,
-                    locationId,
-                    locationText,
-                    items
-                });
-
-                // 6. Write the HTML to the response
+                // 5. Build and send the HTML response
+                const html = buildHtmlForm(poInfo, poItems, issueOptions, context.request.url);
                 context.response.write(html);
 
             } catch (e) {
-                log.error('GET: Error Building Form', e.message);
+                log.error('handleGet Error', e.message);
                 context.response.write(`<html><body><h1>Error</h1><p>Could not load the defect creation form: ${e.message}</p></body></html>`);
             }
         };
 
         /**
-         * Builds the custom HTML form string using Tailwind CSS.
-         * @param {Object} data - Data from the PO to pre-populate the form
-         * @returns {string} - The complete HTML page
-         */
-        const buildHtmlForm = (data) => {
-            // Helper function to build radio items
-            const itemRadios = data.items.map((item, index) => `
-                <label for="item_${item.id}" class="flex items-center p-4 bg-white border border-gray-200 rounded-md hover:bg-gray-50 cursor-pointer">
-                    <input type="radio" id="item_${item.id}" name="custpage_selected_item" value="${item.id}" class="h-4 w-4 text-blue-600 border-gray-300 focus:ring-blue-500" ${index === 0 ? 'checked' : ''}>
-                    <span class="ml-3 block text-sm font-medium text-gray-700">${item.text}</span>
-                </label>
-            `).join('');
-
-            return `
-                <!DOCTYPE html>
-                <html lang="en" class="h-full bg-gray-100">
-                <head>
-                    <meta charset="UTF-8">
-                    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                    <title>Create Manufacturing Defect</title>
-                    <script src="https://cdn.tailwindcss.com"></script>
-                    <style>
-                        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
-                        body { font-family: 'Inter', sans-serif; }
-                    </style>
-                </head>
-                <body class="h-full">
-                    <div class="min-h-full flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
-                        <div class="max-w-2xl w-full space-y-8">
-                            
-                            <div class="bg-white rounded-lg shadow-md overflow-hidden">
-                                <div class="bg-gray-50 border-b border-gray-200 px-6 py-5">
-                                    <h1 class="text-2xl font-semibold text-gray-900">Create Manufacturing Defect</h1>
-                                    <p class="text-sm text-gray-500">From Purchase Order: ${data.poName}</p>
-                                </div>
-
-                                <form method="POST">
-                                    <div class="p-6">
-                                        <!-- Header Info Section -->
-                                        <h2 class="text-lg font-medium text-gray-900 border-b border-gray-200 pb-2 mb-4">Source Information</h2>
-                                        <div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
-                                            <div>
-                                                <label class="block text-sm font-medium text-gray-500">Supplier</label>
-                                                <p class="text-base font-medium text-gray-800">${data.supplierText}</p>
-                                            </div>
-                                            <div>
-                                                <label class="block text-sm font-medium text-gray-500">Plot</label>
-                                                <p class="text-base font-medium text-gray-800">${data.plotText}</p>
-                                            </div>
-                                            <div>
-                                                <label class="block text-sm font-medium text-gray-500">Department</label>
-                                                <p class="text-base font-medium text-gray-800">${data.departmentText}</p>
-                                            </div>
-                                            <div>
-                                                <label class="block text-sm font-medium text-gray-500">Location</label>
-                                                <p class="text-base font-medium text-gray-800">${data.locationText}</p>
-                                            </div>
-                                        </div>
-
-                                        <!-- Item Selection Section -->
-                                        <h2 class="text-lg font-medium text-gray-900 border-b border-gray-200 pb-2 mb-4 mt-8">Select Defective Item</h2>
-                                        <fieldset class="mt-4">
-                                            <legend class="sr-only">Defective Item</legend>
-                                            <div class="space-y-3">
-                                                ${itemRadios}
-                                            </div>
-                                        </fieldset>
-
-                                        <!-- Hidden fields to pass IDs to POST -->
-                                        <input type="hidden" name="custpage_po_id" value="${data.poId}">
-                                        <input type="hidden" name="custpage_supplier_id" value="${data.supplierId}">
-                                        <input type="hidden" name="custpage_plot_id" value="${data.plotId}">
-                                        <input type="hidden" name="custpage_dept_id" value="${data.departmentId}">
-                                        <input type="hidden" name="custpage_loc_id" value="${data.locationId}">
-                                    </div>
-                                    
-                                    <!-- Form Footer / Submit -->
-                                    <div class="bg-gray-50 px-6 py-4 text-right">
-                                        <button type="submit" class="inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
-                                            Create Defect Record
-                                        </button>
-                                    </div>
-                                </form>
-                            </div>
-
-                        </div>
-                    </div>
-                </body>
-                </html>
-            `;
-        };
-
-
-        /**
-         * Handles the POST request to create the new record.
-         * (This logic is identical to the previous version)
-         * @param {Object} context - The context of the Suitelet request
+         * Handles the POST request. Receives form data, creates the new record, and redirects.
+         * @param {Object} context - The Suitelet context.
          */
         const handlePost = (context) => {
-            let newRecordId;
             try {
-                log.debug('POST: Processing form submission');
+                // 1. Get all parameters from the POST body
                 const params = context.request.parameters;
+                log.debug('POST: Received parameters', params);
 
-                // 1. Get all parameters from the form
-                const supplierId = params.custpage_supplier_id;
                 const poId = params.custpage_po_id;
+                const supplierId = params.custpage_supplier_id;
                 const plotId = params.custpage_plot_id;
-                const deptId = params.custpage_dept_id;
-                const locId = params.custpage_loc_id;
+                const departmentId = params.custpage_department_id;
+                const locationId = params.custpage_location_id;
                 const selectedItemId = params.custpage_selected_item;
-
-                log.debug('POST: Received Parameters', JSON.stringify({
-                    supplierId, poId, plotId, deptId, locId, selectedItemId
-                }));
+                const faultIssueId = params.custpage_fault_issue; // New field
 
                 // 2. Validate that an item was selected
                 if (!selectedItemId) {
-                    log.warn('POST: Validation Failed', 'No item was selected.');
+                    log.audit('POST: Validation Failed', 'No item was selected.');
                     throw new Error('You must select a defective item to continue.');
                 }
+                // *** NEW: Validate fault issue ***
+                if (!faultIssueId) {
+                    log.audit('POST: Validation Failed', 'No fault issue was selected.');
+                    throw new Error('You must select a fault issue to continue.');
+                }
+                // *** END NEW ***
 
                 // 3. Create the new Manufacturing Defect record
                 log.debug('POST: Creating new defect record');
-                const defectRec = record.create({
+                const newDefectRec = record.create({
                     type: 'customrecord_manufacturing_defect',
-                    isDynamic: true
+                    isDynamic: true // Use dynamic mode to set values
                 });
 
-                // 4. Set all the values on the new record
-                defectRec.setValue({ fieldId: 'custrecordman_defect_supplier', value: supplierId });
-                defectRec.setValue({ fieldId: 'custrecordman_defect_purchaseorder', value: poId });
-                defectRec.setValue({ fieldId: 'custrecord_man_defect_item', value: selectedItemId });
+                // 4. Set field values from the form
+                newDefectRec.setValue({ fieldId: 'custrecordman_defect_purchaseorder', value: poId });
+                newDefectRec.setValue({ fieldId: 'custrecordman_defect_supplier', value: supplierId });
+                newDefectRec.setValue({ fieldId: 'custrecord_man_defect_plot', value: plotId });
+                newDefectRec.setValue({ fieldId: 'custrecord_man_defect_department', value: departmentId });
+                newDefectRec.setValue({ fieldId: 'custrecord_man_defect_location', value: locationId });
+                newDefectRec.setValue({ fieldId: 'custrecord_man_defect_item', value: selectedItemId });
+                newDefectRec.setValue({ fieldId: 'custrecord_man_defect_issue', value: faultIssueId }); // New field
 
-                // Set non-mandatory fields only if they have a value
-                if (plotId && plotId !== 'null') {
-                    defectRec.setValue({ fieldId: 'custrecord_man_defect_plot', value: plotId });
-                }
-                if (deptId && deptId !== 'null') {
-                    defectRec.setValue({ fieldId: 'custrecord_man_defect_department', value: deptId });
-                }
-                if (locId && locId !== 'null') {
-                    defectRec.setValue({ fieldId: 'custrecord_man_defect_location', value: locId });
-                }
+                // 5. Save the new record
+                const newRecordId = newDefectRec.save();
+                log.debug('POST: New defect record created successfully', `ID: ${newRecordId}`);
 
-                // 5. Save the record
-                newRecordId = defectRec.save();
-                log.debug('POST: Record Created Successfully', `ID: ${newRecordId}`);
-
-                // 6. Redirect the user back to the Purchase Order
+                // 6. Redirect back to the Purchase Order
                 redirect.toRecord({
                     type: record.Type.PURCHASE_ORDER,
-                    id: poId
+                    id: poId,
+                    isEditMode: false
                 });
 
-            } catch (e)
-            {
-                log.error('POST: Error Saving Record', e.message);
-                // If save fails, show a user-friendly error
-                context.response.write(`<html><body class="bg-gray-100 p-10"><div class="max-w-md mx-auto bg-white rounded-lg shadow-md p-6"><h1 class="text-xl font-bold text-red-600">Error</h1><p class="text-gray-700 mt-2">Could not save the defect record: ${e.message}</p><p class="mt-4"><a href="javascript:history.back()" class="text-blue-500 hover:underline">&laquo; Go Back</a></p></div><script src="https://cdn.tailwindcss.com"></script></body></html>`);
+            } catch (e) {
+                log.error('handlePost Error', e.message);
+                // If the save fails, show the error to the user
+                context.response.write(`<html><body><h1>Error</h1><p>Could not save the new defect record: ${e.message}</p><p><a href="javascript:history.back()">Go Back</a></p></body></html>`);
             }
         };
+
+        /**
+         * Builds the HTML form using Tailwind CSS for styling.
+         * @param {Object} poInfo - Header info from the PO.
+         * @param {Array} poItems - Item lines from the PO.
+         * @param {Array} issueOptions - Array of {value, text} for the fault issue dropdown.
+         * @param {string} postUrl - The URL to post the form to.
+         * @returns {string} The complete HTML for the form page.
+         */
+        const buildHtmlForm = (poInfo, poItems, issueOptions, postUrl) => {
+            let html = `
+            <!DOCTYPE html>
+            <html lang="en">
+            <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <title>Manufacturing Defect</title>
+                <script src="https://cdn.tailwindcss.com"></script>
+                <style>
+                    /* Simple loading spinner */
+                    .loader {
+                        border: 4px solid #f3f3f3;
+                        border-top: 4px solid #3498db;
+                        border-radius: 50%;
+                        width: 40px;
+                        height: 40px;
+                        animation: spin 1s linear infinite;
+                    }
+                    @keyframes spin {
+                        0% { transform: rotate(0deg); }
+                        100% { transform: rotate(360deg); }
+                    }
+                    /* Custom style for radio */
+                    input[type="radio"]:checked + label {
+                        background-color: #eff6ff; /* blue-50 */
+                        border-color: #3b82f6; /* blue-500 */
+                    }
+                </style>
+            </head>
+            <body class="bg-gray-100 font-sans min-h-screen">
+                <div id="loading-overlay" class="fixed inset-0 bg-gray-900 bg-opacity-50 flex items-center justify-center z-50 hidden">
+                    <div class="bg-white p-8 rounded-lg shadow-xl flex flex-col items-center">
+                        <div class="loader"></div>
+                        <span class="mt-4 text-lg font-medium text-gray-700">Saving Defect...</span>
+                    </div>
+                </div>
+
+                <div class="container mx-auto p-4 md:p-8 max-w-4xl">
+                    <form id="defect-form" method="POST" action="${postUrl}">
+                        <div class="bg-white shadow-xl rounded-lg overflow-hidden">
+                            <!-- Header Section -->
+                            <div class="text-white p-6" style="background-color: #435969;">
+                                <h1 class="text-3xl font-bold">Manufacturing Defect</h1>
+                                <p class="text-gray-300 mt-1">${poInfo.tranId}</p>
+                            </div>
+                            
+                            <!-- PO Info Header -->
+                            <div class="p-6 border-b border-gray-200">
+                                <h2 class="text-xl font-semibold text-gray-700 mb-4"></h2>
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">  
+                                    ${createInfoField('Supplier', poInfo.supplier)}
+                                    ${createInfoField('Plot', poInfo.plot)}
+                                    ${createInfoField('Location', poInfo.location)}
+                                    ${createInfoField('Department', poInfo.department)}
+                                </div>
+                            </div>
+
+                            <!-- Hidden fields for POST -->
+                            <input type="hidden" name="custpage_po_id" value="${poInfo.poId}">
+                            <input type="hidden" name="custpage_supplier_id" value="${poInfo.supplierId}">
+                            <input type="hidden" name="custpage_plot_id" value="${poInfo.plotId}">
+                            <input type="hidden" name="custpage_department_id" value="${poInfo.departmentId}">
+                            <input type="hidden" name="custpage_location_id" value="${poInfo.locationId}">
+
+                            
+                            <div class="p-6 border-b border-gray-200">
+                                
+                                <div class="max-w-md">
+                                    <label for="custpage_fault_issue" class="block text-sm font-medium text-gray-700 mb-1">
+                                        Fault Issue <span class="text-red-500">*</span>
+                                    </label>
+                                    <select id="custpage_fault_issue" name="custpage_fault_issue" required
+                                        class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md shadow-sm">
+                                        <option value="">Please select a fault issue...</option>
+                                        ${issueOptions.map(opt => `<option value="${opt.value}">${opt.text}</option>`).join('')}
+                                    </select>
+                                </div>
+                            </div>
+
+                            <!-- Item Selection Section -->
+                            <div class="p-6">
+                                <h2 class="text-xl font-semibold text-gray-700 mb-1">Select Defective Item</h2>
+                                <p class="text-sm text-gray-500 mb-4"></p>
+                                <div class="space-y-3">
+                                    ${poItems.map(item => createItemRadio(item)).join('')}
+                                </div>
+                                <div id="item-error" class="text-red-600 text-sm mt-2 hidden">Please select one item.</div>
+                            </div>
+
+                            <!-- Footer / Actions -->
+                            <div class="bg-gray-50 p-6 flex justify-end space-x-3">
+                                <button type="button" onclick="window.history.back()"
+                                        class="bg-white py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500">
+                                    Cancel
+                                </button>
+                                <button type="submit" id="submit-button"
+                                        class="inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                                    Save
+                                </button>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+
+                <script>
+                    document.getElementById('defect-form').addEventListener('submit', function(e) {
+                        // Client-side validation for radio button
+                        const selectedItem = document.querySelector('input[name="custpage_selected_item"]:checked');
+                        const itemError = document.getElementById('item-error');
+                        if (!selectedItem) {
+                            e.preventDefault(); // Stop form submission
+                            itemError.classList.remove('hidden');
+                            // Scroll to the item list
+                            document.querySelector('#item-error').scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        } else {
+                            itemError.classList.add('hidden');
+                            // Show loading spinner
+                            document.getElementById('loading-overlay').classList.remove('hidden');
+                        }
+
+                        // Client-side validation for select (redundant with 'required' but good practice)
+                        const faultIssue = document.getElementById('custpage_fault_issue').value;
+                        if (!faultIssue) {
+                            e.preventDefault(); // Stop form submission
+                            document.getElementById('loading-overlay').classList.add('hidden');
+                            document.getElementById('custpage_fault_issue').focus();
+                            // We don't show a specific error message here as the browser's 'required' tooltip will handle it.
+                        }
+                    });
+                </script>
+            </body>
+            </html>
+            `;
+            return html;
+        };
+
+        /**
+         * Helper function to create a read-only info field.
+         * @param {string} label - The label for the field.
+         * @param {string} value - The value for the field.
+         * @returns {string} HTML for the info field.
+         */
+        const createInfoField = (label, value) => `
+            <div>
+                <span class="block text-sm font-medium text-gray-500">${label}</span>
+                <span class="text-lg text-gray-900">${value || 'N/A'}</span>
+            </div>
+        `;
+
+        /**
+         * Helper function to create a radio button for a PO item.
+         * @param {Object} item - The PO item object.
+         * @returns {string} HTML for the radio button list item.
+         */
+        const createItemRadio = (item) => `
+            <div class="relative">
+                <input type="radio" name="custpage_selected_item" id="item_${item.itemId}_${item.line}" value="${item.itemId}" class="absolute h-4 w-4 top-5 left-4 opacity-0" required>
+                <label for="item_${item.itemId}_${item.line}" 
+                       class="block border border-gray-200 rounded-lg p-4 cursor-pointer transition-all hover:bg-gray-50">
+                    <div class="flex items-center">
+                        <div class="flex-shrink-0">
+                            <!-- Custom radio button appearance -->
+                            <span class="inline-flex items-center justify-center h-6 w-6 rounded-full border border-gray-300 bg-white transition-all">
+                                <span class="h-3 w-3 rounded-full bg-blue-600 opacity-0 transition-all"></span>
+                            </span>
+                        </div>
+                        <div class="ml-4">
+                            <p class="text-md font-semibold text-blue-800">${item.itemName}</p>
+                            <p class="text-sm text-gray-600">${item.description || 'No description'}</p>
+                            <p class="text-sm text-gray-500 mt-1">Quantity on PO: ${item.quantity}</p>
+                        </div>
+                    </div>
+                </label>
+            </div>
+            
+            <!-- This style block is a bit of a hack to change the custom radio button on check -->
+            <style>
+                #item_${item.itemId}_${item.line}:checked + label {
+                    background-color: #eff6ff; /* blue-50 */
+                    border-color: #2563eb; /* blue-600 */
+                }
+                #item_${item.itemId}_${item.line}:checked + label span:first-child {
+                     border-color: #2563eb; /* blue-600 */
+                }
+                 #item_${item.itemId}_${item.line}:checked + label span span {
+                    opacity: 1;
+                }
+            </style>
+        `;
 
         return { onRequest };
     });
