@@ -161,11 +161,16 @@ define(['N/record', 'N/redirect', 'N/log', 'N/search'],
                         line: i,
                         itemId: poRec.getSublistValue({ sublistId: 'item', fieldId: 'item', line: i }),
                         itemName: poRec.getSublistText({ sublistId: 'item', fieldId: 'item', line: i }),
-                        quantity: poRec.getSublistValue({ sublistId: 'item', fieldId: 'quantity', line: i }),
-                        description: poRec.getSublistValue({ sublistId: 'item', fieldId: 'description', line: i })
+                        quantity: (poRec.getSublistValue({ sublistId: 'item', fieldId: 'quantity', line: i }) || '0').toString(),
+                        description: poRec.getSublistValue({ sublistId: 'item', fieldId: 'description', line: i }),
+                        // *** NEW FIELDS ***
+                        width: (poRec.getSublistValue({ sublistId: 'item', fieldId: 'custcol_sf_width', line: i }) || '').toString(),
+                        length: (poRec.getSublistValue({ sublistId: 'item', fieldId: 'custcol_sf_length', line: i }) || '').toString(),
+                        amount: (poRec.getSublistValue({ sublistId: 'item', fieldId: 'amount', line: i }) || '0').toString()
                     });
                 }
                 log.debug('GET: PO Items', poItems);
+
 
                 // 5. Build and send the HTML response
                    const html = buildHtmlForm(poInfo, poItems, issueOptions); // Removed context.request.url
@@ -199,12 +204,38 @@ const handlePost = (context) => {
                 const plotId = params.custpage_plot_id;
                 const departmentId = params.custpage_department_id;
                 const locationId = params.custpage_location_id;
-                const selectedItemId = params.custpage_selected_item;
-                const faultIssueId = params.custpage_fault_issue; // New field
+                const faultIssueId = params.custpage_fault_issue;
+
+                // *** NEW: Parse selected item data from JSON string ***
+                const selectedItemParam = params.custpage_selected_item;
+                log.debug('POST: Raw selected item parameter', selectedItemParam);
+
+                if (!selectedItemParam) {
+                    log.audit('POST: Validation Failed', 'No item was selected (parameter is missing).');
+                    throw new Error('You must select a defective item to continue.');
+                }
+
+                let selectedItemData;
+                try {
+                    // NetSuite's request object automatically un-escapes the &quot; back to "
+                    selectedItemData = JSON.parse(selectedItemParam);
+                } catch (e) {
+                    log.error('POST: Failed to parse selected item JSON', e.message);
+                    throw new Error('The selected item data was malformed. Please go back and try again.');
+                }
+                log.debug('POST: Parsed selected item data', selectedItemData);
+
+                // Extract data for clarity
+                const selectedItemId = selectedItemData.itemId;
+                const selectedItemQty = selectedItemData.quantity;
+                const selectedItemWidth = selectedItemData.width;
+                const selectedItemLength = selectedItemData.length;
+                const selectedItemAmount = selectedItemData.amount;
+                // *** END NEW ***
 
                 // 2. Validate that an item was selected
-                if (!selectedItemId) {
-                    log.audit('POST: Validation Failed', 'No item was selected.');
+                if (!selectedItemId) { // Check the value *inside* the JSON
+                    log.audit('POST: Validation Failed', 'No item ID found in selected item data.');
                     throw new Error('You must select a defective item to continue.');
                 }
                 // *** NEW: Validate fault issue ***
@@ -222,8 +253,13 @@ const handlePost = (context) => {
                     custrecord_man_defect_plot: plotId,
                     custrecord_man_defect_department: departmentId,
                     custrecord_man_defect_location: locationId,
+                    custrecord_man_defect_issue: faultIssueId,
+                    // --- Item fields ---
                     custrecord_man_defect_item: selectedItemId,
-                    custrecord_man_defect_issue: faultIssueId
+                    custrecord_man_defect_width: selectedItemWidth,
+                    custrecord_man_defect_length: selectedItemLength,
+                    custrecord_man_defect_quantity: selectedItemQty,
+                    custrecord_man_defect_cost: selectedItemAmount
                 };
                 log.debug({
                     title: 'POST: Data for New Defect Record',
@@ -244,9 +280,15 @@ const handlePost = (context) => {
                 newDefectRec.setValue({ fieldId: 'custrecord_man_defect_plot', value: plotId });
                 newDefectRec.setValue({ fieldId: 'custrecord_man_defect_department', value: departmentId });
                 newDefectRec.setValue({ fieldId: 'custrecord_man_defect_location', value: locationId });
-                newDefectRec.setValue({ fieldId: 'custrecord_man_defect_item', value: selectedItemId });
-                newDefectRec.setValue({ fieldId: 'custrecord_man_defect_issue', value: faultIssueId }); // New field
+                newDefectRec.setValue({ fieldId: 'custrecord_man_defect_issue', value: faultIssueId }); 
 
+                // *** NEW: Set item line fields ***
+                newDefectRec.setValue({ fieldId: 'custrecord_man_defect_item', value: selectedItemId });
+                newDefectRec.setValue({ fieldId: 'custrecord_man_defect_width', value: selectedItemWidth });
+                newDefectRec.setValue({ fieldId: 'custrecord_man_defect_length', value: selectedItemLength });
+                newDefectRec.setValue({ fieldId: 'custrecord_man_defect_quantity', value: selectedItemQty });
+                newDefectRec.setValue({ fieldId: 'custrecord_man_defect_cost', value: selectedItemAmount });
+                
                 // 5. Save the new record
                 // *** NEW LOG ***
                 log.debug('POST: Attempting to save new defect record...');
@@ -429,9 +471,23 @@ const handlePost = (context) => {
          * @param {Object} item - The PO item object.
          * @returns {string} HTML for the radio button list item.
          */
-        const createItemRadio = (item) => `
+        const createItemRadio = (item) => {
+            // Create the data object to be passed in the radio button's value
+            const itemData = {
+                itemId: item.itemId,
+                quantity: item.quantity,
+                width: item.width,
+                length: item.length,
+                amount: item.amount
+            };
+
+            // Stringify and escape for use in the HTML value attribute
+            const itemDataString = JSON.stringify(itemData)
+                                       .replace(/"/g, '&quot;'); // Escape quotes
+
+            return `
             <div class="relative">
-                <input type="radio" name="custpage_selected_item" id="item_${item.itemId}_${item.line}" value="${item.itemId}" class="absolute h-4 w-4 top-5 left-4 opacity-0" required>
+                <input type="radio" name="custpage_selected_item" id="item_${item.itemId}_${item.line}" value="${itemDataString}" class="absolute h-4 w-4 top-5 left-4 opacity-0" required>
                 <label for="item_${item.itemId}_${item.line}" 
                        class="block border border-gray-200 rounded-lg p-4 cursor-pointer transition-all hover:bg-gray-50">
                     <div class="flex items-center">
@@ -444,6 +500,9 @@ const handlePost = (context) => {
                             <p class="text-md font-semibold text-blue-800">${item.itemName}</p>
                             <p class="text-sm text-gray-600">${item.description || 'No description'}</p>
                             <p class="text-sm text-gray-500 mt-1">Quantity on PO: ${item.quantity}</p>
+                            <p class="text-xs text-gray-500 mt-1">
+                                W: ${item.width || 'N/A'} | L: ${item.length || 'N/A'} | Cost: ${item.amount}
+                            </p>
                         </div>
                     </div>
                 </label>
@@ -459,9 +518,10 @@ const handlePost = (context) => {
                 }
                  #item_${item.itemId}_${item.line}:checked + label span span {
                      opacity: 1;
-                }
+                 }
             </style>
         `;
+        };
 
         return { onRequest };
     });
