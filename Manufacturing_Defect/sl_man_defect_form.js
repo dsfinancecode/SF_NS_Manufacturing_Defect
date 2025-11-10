@@ -296,11 +296,15 @@ define(['N/record', 'N/redirect', 'N/log', 'N/search'],
                 const newRecordId = newDefectRec.save();
                 log.debug('POST: New defect record created successfully', `ID: ${newRecordId}`);
 
-                // 6. Redirect back to the Purchase Order
-                redirect.toRecord({
-                    type: record.Type.PURCHASE_ORDER,
-                    id: poId,
-                    isEditMode: false
+                /// 6. Redirect back to the Purchase Order with a success message
+                redirect.toRecord({
+                    type: record.Type.PURCHASE_ORDER,
+                    id: poId,
+                    isEditMode: false,
+                    parameters: {
+                        'custpage_defect_saved': 'T', // The "signal"
+                        'new_defect_id': newRecordId // Pass the new ID for a better message
+                    }
                 });
 
             } catch (e) {
