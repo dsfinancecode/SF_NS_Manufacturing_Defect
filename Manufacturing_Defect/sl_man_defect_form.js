@@ -377,7 +377,6 @@ define(['N/record', 'N/redirect', 'N/log', 'N/search'],
                             </div>
                             
                             <div class="p-6 md:p-8">
-                                <h2 class="text-xl font-semibold text-gray-700 mb-4">Purchase Order Details</h2>
                                 <div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4"> 	
                                     ${createInfoField('Supplier', poInfo.supplier)}
                                     ${createInfoField('Plot', poInfo.plot)}
