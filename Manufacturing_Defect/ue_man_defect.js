@@ -8,7 +8,7 @@ define(['N/ui/serverWidget'], (ui) => {
         if (context.type !== context.UserEventType.VIEW) return;
 
         const form = context.form;
-        form.clientScriptModulePath = 'SuiteScripts/po_report_defect_cs.js';
+        form.clientScriptModulePath = 'SuiteScripts/Manufacturing_Defect/cs_man_defect.js';
 
         form.addButton({
             id: 'custpage_report_defect',

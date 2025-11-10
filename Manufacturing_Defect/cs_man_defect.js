@@ -2,20 +2,24 @@
  * @NApiVersion 2.1
  * @NScriptType ClientScript
  */
-define(['N/currentRecord', 'N/https', 'N/url', 'N/ui/dialog'], (currentRecord, https, url, dialog) => {
+define(['N/currentRecord', 'N/https', 'N/url', 'N/ui/dialog'], 
+    (currentRecord, https, url, dialog) => {
 
+    // Required entry point (even if empty)
+    const pageInit = (context) => {};
+
+    // Custom button handler
     const onReportDefectClick = async () => {
         try {
             const rec = currentRecord.get();
             const poId = rec.id;
 
             const suiteletUrl = url.resolveScript({
-                scriptId: 'customscript_po_report_defect_sl',
-                deploymentId: 'customdeploy_po_report_defect_sl',
+                scriptId: 'customscript2142',
+                deploymentId: 'customdeploy1',
                 returnExternalUrl: false
             });
 
-            // Send POST request to Suitelet
             const response = https.post({
                 url: suiteletUrl,
                 body: JSON.stringify({ poId })
@@ -43,5 +47,5 @@ define(['N/currentRecord', 'N/https', 'N/url', 'N/ui/dialog'], (currentRecord, h
         }
     };
 
-    return { onReportDefectClick };
+    return { pageInit, onReportDefectClick };
 });
